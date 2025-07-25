@@ -56,7 +56,6 @@ outputs/
 results/
 experiments/
 *.png
-*.pdf
 
 # ----------------------------------
 # 기타
