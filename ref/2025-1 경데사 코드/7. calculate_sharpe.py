@@ -19,7 +19,7 @@ def calculate_sharpe(returns, risk_free):
     risk_free   = np.asarray(risk_free, dtype=float) # 벡터
     mask = ~np.isnan(returns) & ~np.isnan(risk_free)
     excess = returns[mask] - risk_free[mask] # nan이 없을 때
-    if excess.size == 0 or np.nanstd(returns, ddof = 1) == 0:
+    if excess.size == 0 or np.nanstd(returns, ddof = 1) == 0: # ddof=1 : 표본 표준편차
         return np.nan
     return np.nanmean(excess) / np.nanstd(excess, ddof = 1) 
 
