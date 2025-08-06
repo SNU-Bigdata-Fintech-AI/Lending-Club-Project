@@ -41,7 +41,6 @@ data/processed/
 # 모델 및 결과 파일
 # ----------------------------------
 checkpoints/
-*.pkl
 *.joblib
 *.h5
 *.pt
