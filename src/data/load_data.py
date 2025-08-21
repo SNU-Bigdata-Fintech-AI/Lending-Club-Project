@@ -1,4 +1,3 @@
-# data/load_data.py
 import pandas as pd
 
 def load_data(filepath: str) -> pd.DataFrame:

@@ -1,6 +1,7 @@
 import numpy as np
+import pandas as pd
 
-def remove_unnecessary_columns(df):
+def remove_unnecessary_columns(df: pd.DataFrame) -> pd.DataFrame:
     drop_cols = [ 
     'loan_status',
     'last_fico_range_high', 'last_fico_range_low',
@@ -26,14 +27,21 @@ def remove_unnecessary_columns(df):
 
     return df.drop(columns=[col for col in drop_cols if col in df.columns], errors='ignore')
 
-def remove_missing_values(df):
+def remove_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     # 결측치가 있는 행 제거
     return df.dropna(subset=['last_pymnt_d', 'issue_d']).copy()
 
-def remove_inf_values(df):
+def remove_inf_values(df: pd.DataFrame) -> pd.DataFrame:
     # df 전체에서 유한한 값만 남기고, inf/-inf가 포함된 행은 제거
     # 숫자형 컬럼만 선택
     numeric_cols = df.select_dtypes(include=[np.number]).columns
 
     # 숫자형 컬럼 중에서 inf/-inf 있는 행 삭제
     return df[np.isfinite(df[numeric_cols]).all(axis=1)].copy()
+
+def select_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = remove_unnecessary_columns(df)
+    df = remove_missing_values(df)
+    df = remove_inf_values(df)
+    
+    return df
