@@ -1,5 +1,5 @@
-from make_dataset import load_data, make_dataset_for_test
-from utils import calculate_sharpe, get_fred, get_cash_flow
+from data.make_dataset import load_data, make_dataset_for_test
+from models.utils import calculate_sharpe, get_fred, get_cash_flow
 
 
 from joblib import load
