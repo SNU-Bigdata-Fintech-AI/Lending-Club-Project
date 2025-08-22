@@ -16,6 +16,7 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
     drop_cols = [col for col in df.columns if 'unnamed' in col.lower()]
     df = df.drop(columns=drop_cols, errors='ignore')
     df.columns = df.columns.str.strip()
+    
     return df
 
 def make_dataset() -> None:
@@ -34,6 +35,15 @@ def make_dataset() -> None:
     print(f"Saving processed data to: {PROCESSED_PATH}")
     PROCESSED_PATH.parent.mkdir(parents=True, exist_ok=True)
     df_build.to_csv(PROCESSED_PATH, index=False)
+
+def make_dataset_for_test(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare the dataset for testing by applying preprocessing and feature building.
+    """
+    df = preprocess_data(df)
+    df = build_features(df)
+
+    return df
 
 if __name__ == "__main__":
     make_dataset()
