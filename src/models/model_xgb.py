@@ -7,14 +7,16 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
 from xgboost import XGBClassifier
 
-from util import prepare_training_data, calculate_sharpe, pick_best_threshold_by_sharpe
+from src.models.utils import prepare_data, calculate_sharpe, pick_best_threshold_by_sharpe
+
+DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "processed" / "lending_club_2020_train_processed.csv"
 
 def train_xgb():
     # 데이터 준비 (df에는 risk_free_rate / irr 포함됨)
-    df, X, y = prepare_training_data('data/processed/lending_club_2020_train_processed.csv')
+    df, X, y = prepare_data(DATA_PATH)
 
     # 저장 디렉토리
-    SAVE_DIR = Path(".lending_club")
+    SAVE_DIR = Path(__file__).resolve().parents[1] / "models"
     SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
     param_dist = {

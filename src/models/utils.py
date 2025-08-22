@@ -39,8 +39,7 @@ def create_cash_flow_from_dates(row: pd.Series):
     """
     row에 포함되어야 하는 컬럼:
     ['term','default','issue_d','last_pymnt_d','installment','funded_amnt',
-     'recoveries','collection_recovery_fee']
-    - issue_d / last_pymnt_d 는 datetime 가정(문자열이면 외부에서 to_datetime 처리 권장)
+     'recoveries','collection_recovery_fee'] - issue_d / last_pymnt_d 는 datetime 가정
     """
     try:
         # term: '36', '36 months', '60개월' 등에서 숫자만 추출
@@ -195,9 +194,9 @@ def pick_best_threshold_by_sharpe(
 
 
 # -----------------------------
-# Training data preparation
+# data preparation
 # -----------------------------
-def prepare_training_data(
+def prepare_data(
     data_path: Union[str, Path],
     drop_cols: Optional[List[str]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
@@ -256,3 +255,52 @@ def prepare_training_data(
     y = df['default'].astype(int)
 
     return df, X, y
+
+def prepare_data_for_test(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    if drop_cols is None:
+        drop_cols = [
+            'term', 'last_pymnt_d', 'installment', 'funded_amnt',
+            'recoveries', 'collection_recovery_fee', 'default', 'issue_d'
+        ]
+
+    df.columns = df.columns.str.strip()
+
+    # 날짜형 보정(이미 datetime이면 그대로, 문자열일 경우 포맷 가정 없이 파싱)
+    if 'issue_d' in df.columns and not np.issubdtype(df['issue_d'].dtype, np.datetime64):
+        df['issue_d'] = pd.to_datetime(df['issue_d'], errors='coerce')
+    if 'last_pymnt_d' in df.columns and not np.issubdtype(df['last_pymnt_d'].dtype, np.datetime64):
+        # 학습 파이프라인에서 처리되어 있을 가능성이 높지만, 안전하게 파싱 시도
+        # (월-연 포맷/연-월-일 포맷 모두 수용하도록 errors='coerce')
+        parsed = pd.to_datetime(df['last_pymnt_d'], errors='coerce')
+        mask_na = parsed.isna()
+        if mask_na.any():
+            # 다른 흔한 포맷 시도 (예: %b-%Y)
+            parsed2 = pd.to_datetime(df.loc[mask_na, 'last_pymnt_d'], format='%b-%Y', errors='coerce')
+            parsed.loc[mask_na] = parsed2
+        df['last_pymnt_d'] = parsed
+
+    # FRED 금리 불러와 리스크프리 구성 (연 소수)
+    fred_data = get_fred()
+    gs3_series = fred_data['GS3']  # %
+    gs5_series = fred_data['GS5']  # %
+
+    df.loc[:, 'risk_free_rate'] = df.apply(
+        lambda r: get_risk_free_rate(r.get('issue_d'), r.get('term'), gs3_series, gs5_series),
+        axis=1
+    )
+
+    # 현금흐름/IRR 계산
+    need_cols = ['term','default','issue_d','last_pymnt_d','installment',
+                 'funded_amnt','recoveries','collection_recovery_fee']
+    if all(c in df.columns for c in need_cols):
+        df.loc[:, 'cash_flow'] = df.apply(create_cash_flow_from_dates, axis=1)
+        df.loc[:, 'irr'] = df['cash_flow'].apply(get_irr)
+        df.loc[:, 'irr'] = df['irr'].fillna(df['risk_free_rate'])
+    else:
+        # 필요한 원천 컬럼이 없으면 IRR 계산 불가 → risk_free 사용
+        df.loc[:, 'irr'] = df['risk_free_rate']
+
+    # X, y 분리
+    X_test = df.drop(columns=drop_cols, errors='ignore')
+
+    return df, X_test
