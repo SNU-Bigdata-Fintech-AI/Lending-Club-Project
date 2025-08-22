@@ -1,13 +1,15 @@
-from pathlib import Path
 import pandas as pd
 
-from data.load_data import load_data
-from features.build_features import build_features
+from pathlib import Path
+from build_features import build_features
 
 # ---- Relative paths (based on this file) ----
 BASE_DIR: Path = Path(__file__).resolve().parent
 RAW_PATH: Path = BASE_DIR / "raw" / "lending_club_2020_train.csv"
 PROCESSED_PATH: Path = BASE_DIR / "processed" / "lending_club_2020_train_processed.csv"
+
+def load_data(file_path: str) -> pd.DataFrame:
+    return pd.read_csv(file_path, low_memory=False)
 
 def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -24,7 +26,7 @@ def make_dataset() -> None:
     Load, preprocess, build features, and save the dataset.
     """
     print(f"Loading raw data from: {RAW_PATH}")
-    raw_data = load_data(str(RAW_PATH))
+    raw_data = pd.read_csv(str(RAW_PATH))
 
     print("Preprocessing data...")
     df_processed = preprocess_data(raw_data)
@@ -40,7 +42,10 @@ def make_dataset_for_test(df: pd.DataFrame) -> pd.DataFrame:
     """
     Prepare the dataset for testing by applying preprocessing and feature building.
     """
+    df = df.copy()
+    print("Preprocessing data...")
     df = preprocess_data(df)
+    print("Building features...")
     df = build_features(df)
 
     return df

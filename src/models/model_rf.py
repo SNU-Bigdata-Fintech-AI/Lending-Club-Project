@@ -7,7 +7,7 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 
-from src.models.utils import prepare_data, calculate_sharpe, pick_best_threshold_by_sharpe
+from utils import prepare_data, calculate_sharpe, pick_best_threshold_by_sharpe
 
 DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "processed" / "lending_club_2020_train_processed.csv"
 
