@@ -1,19 +1,30 @@
 import json
-import numpy as np
 import joblib
+import numpy as np
+import pandas as pd
 
 from pathlib import Path
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
 from xgboost import XGBClassifier
 
-from models.utils import prepare_data, calculate_sharpe, pick_best_threshold_by_sharpe
+from models.utils import calculate_sharpe, get_fred, get_cash_flow
 
 DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "processed" / "lending_club_2020_train_processed.csv"
 
 def train_xgb():
     # 데이터 준비 (df에는 risk_free_rate / irr 포함됨)
-    df, X, y = prepare_data(DATA_PATH)
+    df = pd.read_csv(DATA_PATH)
+    
+    drop_cols = [
+    'term', 'last_pymnt_d', 'installment', 'funded_amnt',
+    'recoveries', 'collection_recovery_fee', 'default', 'issue_d'
+    ]
+    X = df_test.drop(columns=drop_cols)
+    y = df['default']
+
+    df_train = get_fred(df)
+    df_train = get_cash_flow(df_train)
 
     # 저장 디렉토리
     SAVE_DIR = Path(__file__).resolve().parents[1] / "models"
@@ -74,60 +85,72 @@ def train_xgb():
             X_temp, y_temp, test_size=0.25, random_state=i, stratify=y_temp
         )
 
-        # 모델 학습 (XGBoost)
-        model = XGBClassifier(
-            **best_params,
-            objective="binary:logistic",
-            eval_metric="auc",     # 검증/테스트와 일관되게 유지
-            tree_method="hist",
-            random_state=i,
-            n_jobs=-1,
-            use_label_encoder=False,
-        )
+        # XGBoost 모델 학습
+        model = XGBClassifier(**best_params, random_state=i, n_jobs=-1)
         model.fit(X_train, y_train)
 
-        # ── 검증셋에서 최적 threshold (Sharpe 최대) 탐색 ──
-        y_val_proba = model.predict_proba(X_val)[:, 1]
-        df_val = df.loc[X_val.index].copy()
-        best_thr, best_sharpe = pick_best_threshold_by_sharpe(
-            y_proba=y_val_proba,
-            df_subset=df_val,
-            risk_col="risk_free_rate",
-            irr_col="irr",
-            step=0.05
-        )
+        # 검증셋 예측 확률
+        y_pred_proba = model.predict_proba(X_val)[:, 1]
+        thresholds = np.arange(0.0, 1.0, 0.05)
+
+        best_sharpe = -np.inf
+        best_threshold = None
+        df_val = df.loc[X_val.index]
+
+        for threshold in thresholds:
+            approved_mask = y_pred_proba <= threshold
+            denied_mask = ~approved_mask
+
+            selected = df_val.copy()
+            selected.loc[approved_mask, 'irr_adj'] = selected.loc[approved_mask, 'irr']
+            selected.loc[denied_mask, 'irr_adj'] = selected.loc[denied_mask, 'risk_free_rate']
+
+            returns = selected['irr_adj']
+            risk_free = selected['risk_free_rate']
+            valid = returns.notnull() & risk_free.notnull()
+
+            if valid.sum() < 2:
+                continue
+
+            sharpe = calculate_sharpe(returns[valid], risk_free[valid])
+
+            if sharpe > best_sharpe:
+                best_sharpe = sharpe
+                best_threshold = threshold
 
         best_models.append(model)
-        best_thresholds.append(best_thr)
+        best_thresholds.append(best_threshold)
         validation_sharpes.append(best_sharpe)
 
-        # ── 테스트셋 평가: 승인=IRR, 거절=Risk-free 대체 후 Sharpe/통계 ──
+    # 테스트셋 평가(수정 사항)
+        # --- (Validation 로직과 동일하게: 승인=IRR, 거절=Risk-free 포함) ---
         y_test_proba = model.predict_proba(X_test)[:, 1]
         df_test = df.loc[X_test.index].copy()
-
-        test_approved_mask = y_test_proba <= best_thr
+        test_approved_mask = y_test_proba <= best_threshold
         test_denied_mask = ~test_approved_mask
-
+        # 승인 건: IRR, 거절 건: risk-free 로 수익률 대체
         df_test.loc[test_approved_mask, 'irr_adj'] = df_test.loc[test_approved_mask, 'irr']
         df_test.loc[test_denied_mask,  'irr_adj'] = df_test.loc[test_denied_mask,  'risk_free_rate']
-
-        valid = df_test['irr_adj'].notnull() & df_test['risk_free_rate'].notnull()
-        returns_test = df_test.loc[valid, 'irr_adj']
-        risk_free_test = df_test.loc[valid, 'risk_free_rate']
-
+        returns_test    = df_test['irr_adj']
+        risk_free_test  = df_test['risk_free_rate']
+        valid = returns_test.notnull() & risk_free_test.notnull()
+        returns_test   = returns_test[valid]
+        risk_free_test = risk_free_test[valid]
         sharpe_test = calculate_sharpe(returns_test, risk_free_test)
         test_sharpes.append(sharpe_test)
-
-        test_approval_rates.append(float(test_approved_mask.mean()))
-        test_irr_means.append(float(returns_test.mean()) if not returns_test.empty else np.nan)
-        test_irr_positive_rates.append(float((returns_test > 0).mean()) if not returns_test.empty else np.nan)
+        # 승인 비율은 그대로 전체 대비 승인 비중으로 기록
+        test_approval_rates.append(test_approved_mask.mean())
+        # 요약 통계도 '포함된 수익률(irr_adj, 즉 승인=IRR/거절=RF)' 기준으로 기록
+        test_irr_means.append(returns_test.mean())
+        test_irr_positive_rates.append((returns_test > 0).mean())
+        # ----  수정 사항 끝 ---
 
         # Best 모델 업데이트
         if sharpe_test > best_sharpe_overall:
             best_sharpe_overall = sharpe_test
             best_model = model
             best_model_index = i
-            best_threshold_overall = best_thr
+            best_threshold_overall = best_threshold
             best_params_overall = model.get_params()
 
     # Best 모델/정보 저장
